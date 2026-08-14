@@ -37,17 +37,24 @@ stoichiometric screening of protein complexes with
 
 ## Usage
 
+Run it like any nf-core workflow — software-stack and executor profiles compose:
+
 ```bash
-# SLURM + Apptainer (HPC)
-nextflow run main.nf -profile slurm_apptainer \
+# HPC: Apptainer + SLURM
+nextflow run combflow-nf -profile apptainer,slurm \
     --fasta assets/example.fasta \
     --pdb_dir /path/to/af_predictions_pdb \
-    --stoichiometry 'NS1:1-2,NS2A:1-2'
+    --stoichiometry 'NS1:1-2,NS2A:1-2' \
+    --outdir results \
+    -resume
 
 # single machine, Docker
-nextflow run main.nf -profile local_docker \
+nextflow run combflow-nf -profile docker \
     --fasta assets/example.fasta --pdb_dir pdb --stoichiometry 'NS1:1-2,NS2A:1-2'
 ```
+
+If the repo is pushed to GitHub, the same command works without cloning:
+`nextflow run <user>/combflow-nf -profile apptainer,slurm ...`
 
 ### Parameters
 
@@ -67,12 +74,16 @@ nextflow run main.nf -profile local_docker \
 
 ### Profiles
 
-| Profile | Executor | Software |
-|---|---|---|
-| `slurm_apptainer` | SLURM | Apptainer (autoMounts) |
-| `local_apptainer` | local | Apptainer |
-| `local_docker` | local | Docker |
-| `local_conda` | local | conda — **prepare step only**; assembly needs the container |
+Software-stack and executor profiles compose (comma-separated), nf-core style.
+Default executor is `local`.
+
+| Profile | Effect |
+|---|---|
+| `apptainer` | Apptainer containers (autoMounts) |
+| `singularity` | Singularity containers (autoMounts) |
+| `docker` | Docker containers |
+| `conda` | conda — **prepare step only**; assembly needs the container |
+| `slurm` | SLURM executor (combine e.g. `-profile apptainer,slurm`) |
 
 ## Outputs
 
@@ -85,6 +96,26 @@ results/
 │   ├── logs/<comb>.log           # per-combination CombFold log
 │   └── parallel_chunk_*.log      # GNU parallel job logs
 └── combfold_summary.tsv          # all assemblies ranked by confidence
+```
+
+## Troubleshooting
+
+**Apptainer pull fails with `proot error: ptrace(TRACEME): Operation not permitted`**
+
+Seen on HPC nodes whose kernel seccomp filtering breaks proot (Ubuntu kernel
+bug [#1202161](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1202161)).
+The image pull is done by the Nextflow head process, so export the workaround
+in the shell (or `run.sh`) that launches Nextflow:
+
+```bash
+export PROOT_NO_SECCOMP=1
+```
+
+Or pre-pull into the cache with the exact filename Nextflow expects, then rerun:
+
+```bash
+apptainer pull --name <apptainer_cache>/ntnn19-combfold-parallel-latest.img \
+    docker://ntnn19/combfold-parallel:latest
 ```
 
 ## Notes

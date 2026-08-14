@@ -3,7 +3,7 @@ process PREPARE_SUBUNITS_JSON {
     publishDir params.outdir, mode: 'copy'
 
     conda "conda-forge::click=8.3.0"
-//    container params.combfold_image
+    container params.combfold_image
 
     input:
     path fasta
