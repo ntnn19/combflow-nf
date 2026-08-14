@@ -30,7 +30,7 @@ cp "$(command -v run_on_pdbs.py)" shadow/scripts/run_on_pdbs.py
 ln -sfn "${COMBFOLD_HOME}/scripts/libs" shadow/scripts/libs
 ln -sfn "${COMBFOLD_HOME}/CombinatorialAssembler" shadow/CombinatorialAssembler
 
-mkdir -p "$OUTDIR"
+#mkdir -p "$OUTDIR"
 
 J=$(nproc)
 echo "combfold_parallel: running ${#JSONS[@]} CombFold job(s) via GNU parallel -j ${J}"
@@ -40,8 +40,8 @@ run_one() {
     comb=$(basename "$json" .json)
     out="${OUTDIR}/${comb}"
     rm -rf "$out"
-    mkdir -p "$out"
-    python shadow/scripts/run_on_pdbs.py "$json" "$PDB_DIR" "$out" > "${out}/combfold.log" 2>&1
+#    mkdir -p "$out"
+    python shadow/scripts/run_on_pdbs.py "$json" "$PDB_DIR" "$out"
 }
 export -f run_one
 export OUTDIR PDB_DIR
