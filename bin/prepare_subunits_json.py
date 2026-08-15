@@ -449,6 +449,14 @@ EPILOG = (
     help="Max residues per subunit. 0 = no splitting (each chain = one subunit).",
 )
 @click.option(
+    "--max-chains",
+    type=int,
+    default=26,
+    show_default=True,
+    help="Skip combinations whose total chain count exceeds this limit "
+         "(PDB chain IDs are single letters A-Z, i.e. 26 chains max).",
+)
+@click.option(
     "--start-res",
     type=int,
     default=1,
@@ -512,6 +520,7 @@ def cli(
     stoichiometry: str,
     output_dir: str,
     max_af_size: int,
+    max_chains: int,
     start_res: int,
     chain_start: str,
     filename_pattern: str,
@@ -561,19 +570,31 @@ def cli(
 
     if dry_run:
         click.echo("\nDry run — no files will be written:\n")
+        n_overlimit = 0
         for idx, combo in enumerate(combinations):
             s_str = stoich_string(combo)
             fname = format_filename(filename_pattern, idx, s_str)
+            total_chains = sum(c for _, c in combo)
+            if total_chains > max_chains:
+                n_overlimit += 1
+                click.echo(
+                    f"  [{idx:3d}] SKIP {fname}  "
+                    f"chains={total_chains} > --max-chains {max_chains}  "
+                    f"stoich={s_str}"
+                )
+                continue
             subunits = build_subunits(
                 combo, sequences, max_af_size, start_res, chain_start
             )
-            total_chains = sum(c for _, c in combo)
             click.echo(
                 f"  [{idx:3d}] {fname}  "
                 f"chains={total_chains}  subunits={len(subunits)}  "
                 f"stoich={s_str}"
             )
-        click.echo(f"\nTotal: {len(combinations)} file(s)")
+        click.echo(
+            f"\nTotal: {len(combinations) - n_overlimit} file(s) "
+            f"({n_overlimit} skipped, >{max_chains} chains)"
+        )
         return
 
     # ── Create output directory ──
@@ -583,11 +604,22 @@ def cli(
     manifest_rows: List[dict] = []
     written = 0
     skipped = 0
+    skipped_overlimit = 0
 
     for idx, combo in enumerate(combinations):
         s_str = stoich_string(combo)
         fname = format_filename(filename_pattern, idx, s_str)
         out_path = os.path.join(output_dir, fname)
+
+        total_chains = sum(c for _, c in combo)
+        if total_chains > max_chains:
+            click.echo(
+                f"  SKIP {fname}: {total_chains} chains > "
+                f"--max-chains {max_chains}",
+                err=True,
+            )
+            skipped_overlimit += 1
+            continue
 
         try:
             subunits = build_subunits(
@@ -610,7 +642,6 @@ def cli(
         write_subunits_json(subunits, out_path)
         written += 1
 
-        total_chains = sum(c for _, c in combo)
         row = {
             "index": idx,
             "filename": fname,
@@ -635,9 +666,20 @@ def cli(
         click.echo(f"\nWrote manifest: {manifest_path}")
 
     # ── Summary ──
-    click.echo(f"\nDone: {written} file(s) written, {skipped} skipped")
+    click.echo(
+        f"\nDone: {written} file(s) written, "
+        f"{skipped_overlimit} skipped (>{max_chains} chains), "
+        f"{skipped} failed"
+    )
     if skipped:
-        click.echo("Some files were skipped — see errors above.", err=True)
+        click.echo("Some files failed — see errors above.", err=True)
+        sys.exit(1)
+    if written == 0:
+        click.echo(
+            "ERROR: no JSON files were written — check --stoichiometry "
+            "and --max-chains.",
+            err=True,
+        )
         sys.exit(1)
 
 
