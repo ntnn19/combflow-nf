@@ -9,8 +9,7 @@ process COMBFOLD_ASSEMBLY {
     time params.combfold_time
 
     input:
-    tuple val(chunk_id), path(jsons, stageAs: 'jsons/*')
-    path pdb_dir
+    tuple val(chunk_id), path(jsons, stageAs: 'jsons/*'), path(pdb_dirs, stageAs: 'pdb_dirs/*')
 
     output:
     path "out/*", emit: comb_dirs
@@ -18,7 +17,7 @@ process COMBFOLD_ASSEMBLY {
 
     script:
     """
-    combfold_parallel.sh "${pdb_dir}" out "${params.combfold_home}" jsons/*.json
+    combfold_parallel.sh pdb_dirs/* out "${params.combfold_home}" jsons/*.json
     mv parallel.log "parallel_chunk_${chunk_id}.log"
     """
 
