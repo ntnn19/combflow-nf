@@ -18,7 +18,7 @@ include { PREPARE_FASTAS } from './modules/prepare_fastas'
 include { MAP_FASTA_TO_PDB } from './modules/map_fasta_to_pdb'
 include { CREATE_PDB_DIRS } from './modules/create_pdb_dirs'
 include { COMBFOLD_ASSEMBLY     } from './modules/combfold_assembly'
-//include { COLLECT_RESULTS       } from './modules/collect_results'
+include { COLLECT_RESULTS       } from './modules/collect_results'
 
 workflow {
     if (!params.fasta)         error "Missing required parameter: --fasta <path>"
@@ -40,30 +40,32 @@ workflow {
     jsons_ch = jsons_ch.map { files -> tuple(files.baseName, files) }
     jsons_ch.take(1).view { "jsons_ch: $it" }
 
-    PREPARE_FASTAS(pdb_dir_ch, jsons_ch.take(1))
+    PREPARE_FASTAS(pdb_dir_ch, jsons_ch)
     
     prepare_fastas_ch  = PREPARE_FASTAS.out
     prepare_fastas_ch.take(1).view { "prepare_fastas_ch: $it" }
 
-    MAP_FASTA_TO_PDB(pdb_dir_ch,prepare_fastas_ch.take(1))
+    MAP_FASTA_TO_PDB(pdb_dir_ch,prepare_fastas_ch)
 
     map_fasta_to_pdb_ch = MAP_FASTA_TO_PDB.out    
     map_fasta_to_pdb_ch.take(1).view { "map_fasta_to_pdb_ch: $it" }
 
-    CREATE_PDB_DIRS(pdb_dir_ch,map_fasta_to_pdb_ch.take(1))
+    CREATE_PDB_DIRS(pdb_dir_ch,map_fasta_to_pdb_ch)
 
     create_pdb_dir_ch = CREATE_PDB_DIRS.out
     create_pdb_dir_ch.take(1).view { "create_pdb_dir_ch: $it" }
-//    pdb_dir_per_comb_ch  = create_pdb_dir_ch.flatten()
     pdb_dir_per_comb_ch = create_pdb_dir_ch.join(jsons_ch)
     pdb_dir_per_comb_ch.take(1).view { "pdb_dir_per_comb_ch: $it" }
 
     // chunk combinations; chunk id = first JSON's base name (unique per chunk)
-//    chunks_ch = pdb_dir_per_comb_ch.collate(chunk_size).map { files -> tuple(files[0].baseName, files) }
 
-//    chunks_ch.take(1).view { "chunks_ch: $it" }
+    chunks_ch = pdb_dir_per_comb_ch.collate(chunk_size).map { chunk ->
+        def chunk_id = chunk[0][0]
+        tuple(chunk_id, chunk.collect { t -> t[1] }, chunk.collect { t -> t[2] })
+    }
 
-//    COMBFOLD_ASSEMBLY(chunks_ch, pdb_dir_ch)
+    chunks_ch.take(1).view { "chunks_ch: $it" }
 
-//    COLLECT_RESULTS(COMBFOLD_ASSEMBLY.out.comb_dirs.collect())
+    COMBFOLD_ASSEMBLY(chunks_ch)
+    COLLECT_RESULTS(COMBFOLD_ASSEMBLY.out.comb_dirs.collect())
 }

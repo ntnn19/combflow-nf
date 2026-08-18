@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# combfold_parallel.sh <pdb_dir> <outdir> <combfold_home> <json...>
+# combfold_parallel.sh <outdir> <combfold_home> <json...>
 #
 # Runs one CombFold assembly per subunits JSON via GNU parallel, with
 # -j = nproc (the number of CPUs of the node this task landed on).
+#
+# Each JSON jsons/<comb>.json is assembled with its OWN PDB directory,
+# staged by Nextflow next to the JSONs as pdbs/<comb>_pdbs/ (fallback:
+# the single directory matching pdbs/<comb>*).
 #
 # The patched run_on_pdbs.py resolves "../CombinatorialAssembler" and
 # "scripts/libs" relative to its own location, so a symlink shadow-tree
@@ -13,15 +17,14 @@
 # This works with Docker and with read-only Apptainer container filesystems.
 set -uo pipefail
 
-if [ "$#" -lt 4 ]; then
-    echo "usage: combfold_parallel.sh <pdb_dir> <outdir> <combfold_home> <json...>" >&2
+if [ "$#" -lt 3 ]; then
+    echo "usage: combfold_parallel.sh <outdir> <combfold_home> <json...>" >&2
     exit 2
 fi
 
-PDB_DIR=$1
-OUTDIR=$2
-COMBFOLD_HOME=$3
-shift 3
+OUTDIR=$1
+COMBFOLD_HOME=$2
+shift 2
 JSONS=("$@")
 
 # --- shadow tree -----------------------------------------------------------
@@ -34,16 +37,42 @@ ln -sfn "${COMBFOLD_HOME}/CombinatorialAssembler" shadow/CombinatorialAssembler
 J=$(nproc)
 echo "combfold_parallel: running ${#JSONS[@]} CombFold job(s) via GNU parallel -j ${J}"
 
+# --- per-combination PDB dir resolution ------------------------------------
+# Convention: pdbs/<comb>_pdbs (as emitted by CREATE_PDB_DIRS). Fallback:
+# exactly one directory matching pdbs/<comb>*. Prints the dir on stdout.
+pdb_dir_for() {
+    comb=$1
+    if [ -d "pdbs/${comb}_pdbs" ]; then
+        echo "pdbs/${comb}_pdbs"
+        return 0
+    fi
+    matches=()
+    for d in pdbs/"${comb}"*/; do
+        [ -d "$d" ] && matches+=("$d")
+    done
+    if [ "${#matches[@]}" -eq 1 ]; then
+        echo "${matches[0]%/}"
+        return 0
+    fi
+    echo "combfold_parallel: ERROR - expected exactly one PDB dir matching pdbs/${comb}*, found ${#matches[@]}" >&2
+    return 1
+}
+
 run_one() {
     json=$1
     comb=$(basename "$json" .json)
     out="${OUTDIR}/${comb}"
+    pdb_dir=$(pdb_dir_for "$comb") || return 1
     rm -rf "$out"
-#    mkdir -p "$out"
-    python shadow/scripts/run_on_pdbs.py "$json" "$PDB_DIR" "$out"
+    # run_on_pdbs.py refuses to run into a non-empty output dir, so the log
+    # must NOT be created inside $out before the run - write it outside and
+    # move it in afterwards.
+    python shadow/scripts/run_on_pdbs.py "$json" "$pdb_dir" "$out"
+    rc=$?
+    return $rc
 }
-export -f run_one
-export OUTDIR PDB_DIR
+export -f run_one pdb_dir_for
+export OUTDIR
 
 printf '%s\n' "${JSONS[@]}" | parallel -j "$J" --joblog parallel.log run_one {}
 PARALLEL_RC=$?
